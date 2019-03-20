@@ -189,10 +189,10 @@ class VCOCOeval(object):
 
   def _do_eval(self, detections_file, ovr_thresh=0.5):
     vcocodb = self._get_vcocodb()
-    self._do_agent_eval(vcocodb, detections_file, ovr_thresh=ovr_thresh)
-    self._do_role_eval(vcocodb, detections_file, ovr_thresh=ovr_thresh, eval_type='scenario_1')
+    # self._do_agent_eval(vcocodb, detections_file, ovr_thresh=ovr_thresh)
+    fp, fn = self._do_role_eval(vcocodb, detections_file, ovr_thresh=ovr_thresh, eval_type='scenario_1')
     self._do_role_eval(vcocodb, detections_file, ovr_thresh=ovr_thresh, eval_type='scenario_2')
-
+    return fp, fn
   
   def _do_role_eval(self, vcocodb, detections_file, ovr_thresh=0.5, eval_type='scenario_1'):
 
@@ -204,7 +204,11 @@ class VCOCOeval(object):
     sc = [[[] for r in range(2)] for a in range(self.num_actions)]
 
     npos = np.zeros((self.num_actions), dtype=np.float32)
-
+    false_positives = []
+    false_negatives = []
+    fp_n = np.zeros([26,3], dtype=int)
+    fn_n = np.zeros([26,3], dtype=int)
+    
     for i in range(len(vcocodb)):
       image_id = vcocodb[i]['id']
       gt_inds = np.where(vcocodb[i]['gt_classes'] == 1)[0]
@@ -280,6 +284,11 @@ class VCOCOeval(object):
               ov_role = get_overlap(gt_roles[jmax, :].reshape((1, 4)), role_boxes[j, :])
 
             is_true_action = (gt_actions[jmax, aid] == 1)
+            if not is_true_action and agent_scores[j]>0.5 and fp_n[aid][rid] < 5:
+                agent_box = [float(nu) for nu in agent_boxes[j, :]]
+                role_box = [float(nu) for nu in role_boxes[j, :]]
+                false_positives.append([image_id, agent_box, role_box, str(self.actions[aid]+'_'+self.roles[aid][rid+1]), float(agent_scores[j])])
+                fp_n[aid][rid] += 1
             sc[aid][rid].append(agent_scores[j])
             if is_true_action and (ovmax>=ovr_thresh) and (ov_role>=ovr_thresh):
               if covered[jmax]:
@@ -293,6 +302,13 @@ class VCOCOeval(object):
               fp[aid][rid].append(1)
               tp[aid][rid].append(0)
 
+          for j in range(gt_boxes.shape[0]):
+            if not covered[j] and gt_actions[j, aid] == 1 and gt_role_inds[j] > -1 and fn_n[aid][rid] < 5:
+              fn_n[aid][rid] += 1
+              agent_box = [float(nu) for nu in gt_boxes[j, :]]
+              mnlsar = list(gt_roles[j, :].reshape((1,4))[0])
+              role_box = [float(nu) for nu in mnlsar]
+              false_negatives.append([image_id, agent_box, role_box, str(self.actions[aid]+'_'+self.roles[aid][rid+1]), 1.0])
     # compute ap for each action
     role_ap = np.zeros((self.num_actions, 2), dtype=np.float32)
     role_ap[:] = np.nan
@@ -313,7 +329,7 @@ class VCOCOeval(object):
         a_tp = np.cumsum(a_tp)
         rec = a_tp / float(npos[aid])
         #check
-        assert(np.amax(rec) <= 1)
+        #assert(np.amax(rec) <= 1)
         prec = a_tp / np.maximum(a_tp + a_fp, np.finfo(np.float64).eps)
         role_ap[aid, rid] = voc_ap(rec, prec)
 
@@ -324,6 +340,8 @@ class VCOCOeval(object):
         print('{: >23}: AP = {:0.2f} (#pos = {:d})'.format(self.actions[aid]+'-'+self.roles[aid][rid+1], role_ap[aid, rid]*100.0, int(npos[aid])))
     print('Average Role [%s] AP = %.2f'%(eval_type, np.nanmean(role_ap) * 100.00))  
     print('---------------------------------------------') 
+    print len(false_positives), len(false_negatives)
+    return false_positives, false_negatives
 
 
   def _do_agent_eval(self, vcocodb, detections_file, ovr_thresh=0.5):

@@ -32,7 +32,7 @@ def load_coco(dir_name=None):
   if dir_name is None:
     dir_name = get_data_dir()
   if coco == []:
-    coco = COCO(os.path.join(dir_name, 'instances_vcoco_all_2014.json'))
+    coco = COCO(os.path.join(dir_name, 'instances_vcoco_all_2017.json'))
   return coco
 
 def load_vcoco(imset, dir_name=None):
@@ -130,7 +130,7 @@ def attach_gt_boxes(vsrl_data, coco):
 
   vsrl_data['bbox'] = xyhw_to_xyxy(bbox)
   vsrl_data['role_bbox'] = \
-    np.nan*np.zeros((vsrl_data['role_object_id'].shape[0], \
+    np.zeros((vsrl_data['role_object_id'].shape[0], \
       4*vsrl_data['role_object_id'].shape[1]), dtype=np.float)
   
   # Get boxes for the role objects
